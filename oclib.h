@@ -41,17 +41,17 @@
 #define WARN(s) fprintf (stderr, "\nWarning[%s,%d]:%s() %s\n",__FILE__,__LINE__,__FUNCTION__,s);
 #define CHECK(s,n) fprintf (stderr, "\nCheck[%s,%d]:%s() %s=%d\n",__FILE__,__LINE__,__FUNCTION__,s,n);
 /* next stolen from Tor, util.h, vpv-05feb */
-#define ASSERT(expr)                                                         \
-  do                                                                         \
-    {                                                                        \
-      if (!expr)  /* if 'expr' is 0 */                                       \
-        {                                                                    \
-          fprintf (stderr,                                                   \
+#define ASSERT(expr)																		\
+  do																							\
+    {																							\
+      if (!expr)  /* if 'expr' is 0 */												\
+        {																					\
+          fprintf (stderr,																\
                    "Error[%s:%d]%s() - Assertion (%s) failed; aborting. \n", \
-                   __FILE__, __LINE__, __FUNCTION__, #expr);                 \
-          abort ();                                                          \
-        }                                                                    \
-    }                                                                        \
+                   __FILE__, __LINE__, __FUNCTION__, #expr);				\
+          abort ();																		\
+        }																					\
+    }																							\
   while (0)
 
 /* 
@@ -74,30 +74,30 @@ typedef u8_t oc_block_t[OC_BLOCK_LEN];
 
 /* AB */
 typedef struct {
-	  i32_t d;							 /* degree */
-	  i32_t id;						  /* seed for the prng from which 'd' random adjacent CBs are generated */
+  i32_t d;							 /* degree */
+  i32_t id;						  /* seed for the prng from which 'd' random adjacent CBs are generated */
 } ab_t;
 
 /* CB */
 typedef struct {
-	  i32_t d;							 /* degree */
-	  i32_t id;						  /* seed for the prng from which 'd' random adjacent CBs are generated */
-	  i32_t adj[OC_MAX_DEG];		/* index list of adjacent CMB-s - filled in the decoder */
-	  oc_block_t block;		/* check block data	*/
+  i32_t d;							 /* degree */
+  i32_t id;						  /* seed for the prng from which 'd' random adjacent CBs are generated */
+  i32_t adj[OC_MAX_DEG];		/* index list of adjacent CMB-s - filled in the decoder */
+  oc_block_t block;		/* check block data	*/
 } cb_t;
 
 /* list to store incoming CBs */
 typedef struct cb_list {
-	  cb_t cb;
-	  struct cb_list *next;
+  cb_t cb;
+  struct cb_list *next;
 } cb_list_t;
 
 typedef enum { NO, YES } bool_t;
 
 /* composite message block OMB */
 typedef struct {
-	  bool_t isrec;				  /* is recovered */
-	  oc_block_t block;		/* check block data	*/
+  bool_t isrec;				  /* is recovered */
+  oc_block_t block;		/* check block data	*/
 } cmb_t;
 
 /* composite message */
