@@ -1,0 +1,424 @@
+/* Copyright 2007 Vesselin Velichkov, Miroslav Knezevic
+
+    This file is part of OC.
+
+    OC is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    OC is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with OC.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+Specification of Online Codes, 
+according to Maymounkov, "Online Codes"; Maymounkov and Mazieres,  "Rateless Codes and Big Downloads"
+
+Signatures:
+
+-RC - rateless code
+-OC - online code - a type of RC
+-RC-s - rateless codes
+-RCs are characterized by three parameters:
+    +block size - 20 Bytes (AV chunk payload)
+    +eps - epsilon, determines the degree of suboptimality, ie how many rateless blocks are needed to reconstruct the original message. this number is calculated by the formula: (1+3*eps)*n : recommended value (eps = 0.01)
+    +q - the success probability - ie if we have (1+3*eps)*n number of rateless blocks, how probable it is that from them we can reconstruct the original message; the probability that we'll FAIL to reconstruct the message from (1+3*eps)*n number of rateless blocks is: (eps/2)^(q+1)
+    +recommended values
+  
+        eps = 0.01
+        q = 3
+        F = 2114
+        average check block degree 8.23 (the statistical expectation)
+        (AV block size = 20 Bytes)
+
+-terms
+  +OM - original message
+  +OMB - original message block - one OM is composed of one or more OMB-s
+  +AB - auxiliary block
+  +CM - composite message
+  +CMB - composite message block
+  +CM = OM | AB-s
+  +CM property - knowledge of any (1-eps/2) fraction of blocks of the CM allows full recovery of OM
+  +CB - check blocks
+  +^ - XOR
+  +OC_BLOCK_LEN - online codes block length, in Bytes
+  +OMB_NUM - number of Original Message Blocks (OMB) ie. number of blocks from which the the Original Message (OM) is composed   
+  +AB_NUM - number of Auxiliary Blocks (AB-s)
+  +CMB_NUM- number of Composite Message Blocks: CMB_NUM = OMB_NUM + AB_NUM
+  +EPS - algorithm parameter epsilon; recommended value eps = 0.01
+  +Q - algorithm parameter q; recommended value q=3
+  +F - algorithm parameter F; recommended value F = 2114
+
+  +the CM is continuously encoded with CBs
+  +decoding: from received CBs recover (1-eps/2) blocks of CM; from (1-eps/2) blocks of CM, recover OM
+
+-Outer Encoding - producing AB-s
+
+    (1) first produce (0.55*q*eps*n) number of empty ABs eg. for n=1000 (ie. OM is 1000 blocks long),and q=3,and eps=0.01, the number of neccessary AB-s is 
+
+        m = 
+        0.55*3*0.01*n = 
+        0.017*n = //for n=1000 blocks
+        0.017*1000 =
+        17
+
+        +The result above is interpreted as: when encoding a message, for every 1000 blocks of the message, we need 17 auxiliary (additional) blocks
+        +or equivalently - for every 100 blocks, we need 1.7 = ~2 auxiliary blocks
+
+    (2) once the necessary number of empty AB-s are produced, next we have to calculate their content. This is done according to the following procedure:
+
+        -an AB is calculated as an XOR of several OMB-s like that:
+
+            +for each OMB, choose randomly q=3 number of AB-s 
+            +compute an AB as the XOR of all q blocks assigned to it
+                -let's say we have an OM of eight OM blocks (n=8), and that we have calculated four empty AB-s (normally for 8 OM blocks, we do not need any AB-s, but we generate four AB-s here for the sake of the example): 
+                -for each of the eight OMB-s, choose three random AB-s 
+                -below we designate OM blocks like that - [N]; we designate AB blocks like that - {N}; '|' is concatenation;
+
+[1]           [2]            [3]          [4]            [5]           [6]            [7]            [8]            |  {9} {10} {11} {12}  :  OM | AB
+
+{9},{9},{10}  {11},{9},{10}  {11},{10}    {12},{11},{9}  {9},{9},{12}  {12},{10},{9}  {9},{10},{11}  {10},{12},{9}
+
+             {9} = [1] [2] [4] [5] [6] [7] [8]                                                         : find each of the AB-s to which OMB-s is assigned
+            {10} = [1] [2] [3] [6] [7] [8]               
+            {11} = [2] [3] [4] [7]
+            {12} = [4] [5] [6] [8] 
+
+    (3) compute each AB {N} as the XOR of the OMB-s to which N is assigned; eg. AB {11} is computed like this:
+
+            {11} = [2] XOR [3] XOR [4] XOR [7]
+
+/* counts over OMB-s */
+for (i = 0; i < OMB_NUM; ++i) {
+
+    /* counts over q=3 - number of AB-s per OMB */
+    for (j = 0; j < q; ++j) {
+
+        /* generate a random number between OM_LEN+1 (the first AB) and OM_LEN+NUM_ABs (the last AB) */
+        r = rand (OMB_NUM+1, AB_NUM);
+
+        /* xor the random AB with the current OMB */
+        AB[r] = AB[r] XOR OMB[i];
+    }
+
+}
+
+    ---> not sure if this is necessary? ---> (3') for each constructed AB, keep a list of the sequential numbers SeqN of the OMB-s from which this AB was constructed (its adjacent OMB-s) eg. in the example for AB {11} we have to keep the list SeqN-ab{11} = 2,3,4,7 
+        -we keep similar lists for the other AB-s {9},{10}, and {12}
+
+    (4) append the calculated AB-s to the OM to obtain the CM
+
+            CM = OM | AB  :  [1]  [2]  [3]  [4]  [5]  [6]  [7]  [8]  |  {9}  {10}  {11}  {12}
+
+        A CM is composed of CMB-s.
+
+-Inner Encoding - producing an infinite series of CB-s
+
+    +produce CBs from the CM blocks
+    +depends on global values:
+
+        eps = 0.01
+        q = 3
+        F = 2114
+ 
+    (1) calculate the probabilities p1, p2, ...,pi, ...pF; 1 <= i <= F, according to the following formula (this probability distribution is the main contribution of the "Online Codes" paper; it's based on a Theorem proof)
+
+            pi = (1-p1)*F/(F-1)*i*(i-1), for 2 <= i <= F
+
+        where F and p1 are
+
+        F = 2114
+
+        p1 =
+        1-(1+1/F)/(1+eps) =
+        1-(1+1/2114)/(1+0.01) =
+        1-(1+0.000473037)/1.01 =
+        1-1.000473037/1.01 =
+        1-0.990567363 =
+        0.009432637
+
+        If we replace p1 and F in the formula for pi we get:
+
+        pi = 
+        (1-0.009432637)*2114/2113*i*(i-1) =
+        0.990567363*2114/2113*i*(i-1) =
+        2094.059405941 / 2113 * i*(i-1) =
+        2094/2113 * 1/i*(i-1) =
+        0.99103616/i*(i-1) = //round-up to the third digit
+        0.991/i*(i-1)
+
+        Using the above formula, we calculate all probabilities p2,...,pF 
+
+        p2 = 
+        0.991/2*1 =
+        0.49551808
+
+        p3 =
+        0.991/3*2 =
+        0.165166667
+
+        p4 = 
+        0.991/4*3 =
+        0.082583333
+
+        ...
+
+        pF = 
+        0.991/2114*2113 =
+        0.000000222 
+ 
+        Next in order to calculate a CB we proceed as follow:
+
+    (2) Choose "randomly" (but biased) the number d of CMB-s from which we shell construct the CB - this is called the degree of the CB
+
+        The degree d of the CB is chosen according to the probability distribution 
+
+            p1, p2, ..., pF
+ 
+        The probability that we'll choose d to be equal to i, is equal to pi.
+
+        How can we use a PRNG for choosing d?
+
+    (3) After we've chosen a value for d, next we select randomly and uniformly (?) d number of CMB-s
+
+        Eg. suppose we have chosen d=3 then form 
+
+            CM = OM | AB  :  [1]  [2]  [3]  [4]  [5]  [6]  [7]  [8]  |  {9}  {10}  {11}  {12}
+
+        we select randomly three CMB-s:   [3] [7] {11}
+
+    (4) We calculate the CB as an XOR of the selected CMB-s:
+
+        CB = [3] XOR [7] XOR {11}
+
+    (5) we send the CB along with the following info:
+
+        (-ID - unique 160-bit identifier of the transmitted CB)
+        -d - the degree of CB - the number of adjacent CMB-s - d=3 for the example above
+        -SeqN-unknown list - a list of 'd' sequence numbers from which this CB was constructed (in the example above these are 3,7,11) - for the receipient they are 'unknown'
+
+-DCD - decoder
+-ECD - encoder
+
+-Decoding - recovering CMB-s from received CB-s
+
+    (0) before starting to decode CB-s, the decoder DCD must know the following two values for the currently transmitted OM (message, file, etc):
+
+        -size of OM - total number of OMB-s 
+        -total number of AB-s   
+       
+        -if we imagine a scenario in which an initiator I requests a file 'foo.bar' from peer P, then the above parameters can be transmitted from P to I in the following protocol:
+
+            I ----request file 'foo.bar'---> P
+            I <---  'foo.bar' available ---- P
+                     blk-size = 681 OMBs 
+                     aux-size = 14 AB-s
+            I ----ok 'foo.bar'          ---> P
+            I <---    start transmission---- P
+            I <---    ...CB...          ---- P
+            I <---    ...CB...          ---- P
+            I <---    ...CB...          ---- P
+                      ...
+            I <---    ...CB...          ---- P
+            I ----'foo.bar' recovered   ---> P
+            END
+
+    Assuming that the DCD at I already knows the blk-size (number of OMB-s) and aux-size (number of AB-s) of the requested file (the OM), it recovers the OM according to the following algorithm
+
+    (1) -create one list and one arrey:
+
+            +cb-list : a list in which to store received CB-s:
+                -the head of the list contains the blk-size and the aux-size of the OM
+                -each member the cb-list contains following data:
+                    +d - degree - number of unknown CMB-s (AB-s and OMB-s) adjacent to this CB (ie. how many CMB-s do we need in order to recover the OMB underneath this CB)
+                    +CB-data
+                    +SeqN-unknown - a list of 'd' sequential numbers of unknown (unrecovered) CMB-s, adjacent to this CB
+                    (+SeqN-known - a list of sequential numbers of KNOWN (recovered) CMB-s, adjacent to this CB)
+                    (+cID - the id of the CB - for future, vpv-070803)
+
+            +cmb-arrey : an arrey in which to store recovered CMB-s:
+                -allocate an arrey of size (blk-size + aux-size) with elements CMB-s
+                -the arrey is numbered according to the sequence number SeqN of the corresponding CMB eg. the CMB stored at position 'i' in the arrey corresponds to the CMB with sequence number SeqN
+
+    (2) receive a CB - remember here what information is transmitted with each CB- it is this:
+        -ID
+        -d - degree of the CB
+        -CB chunk data
+        -SeqN-unknown - list of d sequence numbers
+
+    (6) parse the SeqN-unknown list like this:
+        
+        int i;/* counter */
+        int sn; /* sequence number */
+
+        /* CB is the Check Block we receive over the network */
+        for (i = 0; i < d; ++i) {
+
+            /* get first number from the list */
+            sn = CB->SeqN[i];
+
+            /* check if we haven't already recovered CMB with number 'sn' */
+            if (cmb-arrey[sn] != 0) { /* if yes*/
+
+                /* lower the degree of the CB */
+                CB.d--;
+
+                /* xor the chunk with the recovered block */
+                XOR (CB->data, cmb-arrey[sn], chunk_len);
+
+                /* set the known sn to 0 */
+                CB->SeqN[i] = 0;
+
+            } else { /* OMB with number 'sn' is not yet recovered */
+
+                /* do nothing, just proceed with the next 'sn' */       
+            } 
+        } 
+
+        /* if the degree of the CB is 1 then this is a recovered CMB; its sequence number will be the only non-zero element now left in CB->SeqN[] */
+        if (cb-list[cID].d == 1) {
+
+            /* store the Seq num. of the recovered chunk */
+            r = CB->SeqN-unknown[k];
+
+            /* what is in CB->data is a decoded CMB, so just copy it in the cmb-arrey */
+            memcpy (cmb-arrey[r], CB->data, chunk_len);
+
+            /* next go through the whole list of received chunks and remove from their SeqN-unknown lists the recovered seq. num. 'r' */
+             
+            /* every time you remove an 'r', also lower the degree of the entry */
+
+            /* every time you remove an 'r', also xor the chunk with the recovered 'r' chunk; next check if its degree has not become 1 - if yes then copy the chunk to the cmb-arrey */
+        }
+
+
+    (5) /* if the degree of the CB is 0 then all the CMB-s from which it was encoded have already been recovered, so this CB is useless for us, so do NOT add it to the cb-list */ else next
+
+    (6) finally store the received CB chunk data in cb-list[cID]->data
+
+    (7) store the degree of the received CB: cb-list[cID].d = d
+
+    (8) receive next chunk
+
+---generating a random number according to a given probability distribution
+
+-we have a probability distribution - the Online Codes Probability Distribution OCPD
+ 
+    p1, p2, ...,pi, ...pF; 1 <= i <= F, F = 2114
+
+-we calculate all probabilities pi, 1<=i<= F and next we partition the space between 1 and F according to the values of pi - the bigger the probability pi, the longer the interval on the line between 1 and F. like this:
+
+
+  0  1    2        3               i-1          i            2113         2114  : i
+  |--|----|--------|--|----- ... --|------------|---...---|--|------------|
+  |p1|<p2>|<--p3-->|p4|            |<---pi----->|            |<-p2114---->|     : pi            
+ 
+
+-next we plot the probability distribution function of Pi 
+
+   Pi                PD function
+   
+   |
+ 1 -                              *-------------------------
+   |                           *---  -pF
+   |                       *---   ...
+   |                   *---
+   |                      | p5
+   |               *---   -
+   |                  |
+  pr------------------x------------------------------------------------- R
+   |                  | p4 
+   |           *---   -
+   |              |
+   |              | p3
+   |       *---   -
+   |   *---   - p2
+   |      |
+   |      |
+   |      | p1
+   |      |
+-------=============================================================== I
+   0   1   2   3   4   5   6   7   8
+
+  
+-On the Y axis is measured the probability that a random variable I will happen to be <= i ie.
+
+     Pi = P(I <= i)
+ 
+Algorithm for generating a random number 'r' according to a given probability distribution (PD) 'p1, p2, ...,pi, ...pF'  
+(thanks to http://blade.nagaokaut.ac.jp/cgi-bin/scat.rb/ruby/ruby-talk/68244)
+
+    (1) from the given probability distribution p1, p2, ...,pi, ...pF, calculate the probability distribution function Pi
+
+    (2) next generate  a random probability 'pr' (number between 0.0 and 1.0) like this:
+
+        float pr = rand () / RAND_MAX; /* this generates a random number between 0 and 1 ie. a probability */
+
+    (3) On the probability distribution (PD) graph, 'pr' is somewhere on the Pi axis (the Y axis, see above). 
+
+    (4) On the PD graph, we draw a horizontal line, parallel to the X axis and passing through the value 'pr' (see line R on the PD graph above)
+
+    (5) Now the trick is to find which one of the vertical segments p1, p2, ..., pF (ie. our probabilities), the line R intersects. (Once we find this then we associate the 'i' of the found probability with our randomly generated pr. Then this will be the 'i' randomly chosen according to the probability distribution p1, p2, ..., pF - read on)
+
+    (6) In the PD graph, pr intersects with p4. Thus we choose r=4 - a number, randomly generated according to the probability distribution p1, p2, ...,pi, ...pF
+
+
+APPENDIX: Theory stuff - ref. to "Online Codes (extended abstract)", Petar Maymounkouv
+
+-We have original message OM composed of n message blocks MB
+-M is encoded into several check blocks CB
+-a check block CB is an XOR of i MB-s; the i MBs are selected independently from all n MBs; i is called the degree of the CB
+-the degree of a CB is i - the number of MBs from which it was obtained
+-the degree of an CB is chosen randomly according to a probability distribution (p1, p2, ..., pF); degree i is chosen with probability pi
+-F - maximum degree that a CB may have == constant
+-we have n MB-s and (1+eps) CB-s : show that all MB-s can be recovered from the CB-s
+-let beta = 1+eps => we have (beta*n) number of CB-s
+-decoding:
+
+
+    (1) find a CB all of which MB-s are recovered except for one MB_x: CB = MB_1 ^ MB_2 ^ ... ^ MB_x;
+    (2) find the missing message block MB_x = CB ^ MB_1 ^ MB_2 ^ ... ^ MB_{x-1}
+    (3) go back to (1)
+    +repeat (1), (2) and (3) until all MB-s are recovered
+
+-bipartite graph G - composed of two disjoint sets U and V; no edges between vertices of the same set; 
+
+               V          W
+  left vertices           right vertices
+  message blocks          check blocks
+                   edge
+            MB_i   <--->  CB_i
+
+<-recoverable                       useful->
+
+|<-OR nodes                         AND nodes ->|
+
+-a MB v is recoverable if at least one of its CB is useful
+-a CB is useful if all of its adjacent MB-s are known, except one - v
+
+-MB_i is adjacent to CB_i ie there is an edge between MB_i and CB_i
+-virtex == node == block == message block == 30 Bytes
+-decoding as a graph process:
+    +definnitions
+        -the degree of a node is the number of its adjacent nodes
+        -the right degree of an edge is the degree of its right node
+        -the left degree of an edge is the degree of its left node
+    +decoding
+        (1) find an edge of right degree 1 (same as saying 'find a CB with only one unknown MB')
+        (2) mark its left node as recovered (same as 'mark the unknown MB as recovered')
+        (3) remove all edges incident to the recovered left node (ie 'remove all links between various CB-s with this MB')
+        +repeat (1), (2) and (3) until there are no more edges of right degree 1       
+ 
+-CB is the number of MB-s of which it is composed - in the context of a graph this is the same as saying: the degree of a CB is the number of its adjacent MB-s. 
+
+-all beta*n CB-s choose their degrees ie. each CB chooses how many edges to have
+-all beta*n CB nodes connect their edges uniformly at random to the left nodes
+
+-right node degree == the right degree of a node is the number of its adjacent left nodes 
+
+END
